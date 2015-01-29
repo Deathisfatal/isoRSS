@@ -8,6 +8,9 @@ import (
 	"net/http"
 	"regexp"
 	"time"
+    "io"
+    "encoding/hex"
+    "crypto/md5"
 )
 
 var (
@@ -29,15 +32,27 @@ type ISO struct {
 	distro   string
 	url      string
 	filename string
+    date        time.Time
+    guid string
 }
 
-func parseHrefsFromDebianPage(page string, arch string, _type string) []string {
+type debianISO struct {
+    href string
+    date time.Time
+}
+
+func parseISOFromDebianPage(page string, arch string, _type string) []debianISO {
 	r, _ := regexp.Compile("href=\"([^\"]*.torrent)\"")
 	hrefs := r.FindAllString(page, -1)
+    iso := make([]debianISO, len(hrefs))
 	for i, element := range hrefs {
 		hrefs[i] = debianBaseURL + arch + "/" + _type + element[6:len(element)-1]
+        iso[i] = debianISO{
+            href: hrefs[i],
+            date: now, //todo
+        }
 	}
-	return hrefs
+	return iso
 }
 
 func fetchDebianPage(arch string, _type string) string {
@@ -51,15 +66,35 @@ func fetchDebianPage(arch string, _type string) string {
 func fetchDebianISOs() []ISO {
 	isos := make([]ISO, 0)
 	cd := "bt-cd/"
-	archs := []string{"amd64", "i386", "armel", "mips", "armhf"}
-
+	archs := []string{
+        "amd64",
+        "i386",
+       /* "armel",*/
+       /* "mips",*/
+       /* "armhf",*/
+       /* "ia64",*/
+       /* "kfreebsd-i386",*/
+       /* "kfreebsd-amd64",*/
+       /* "mipsel",*/
+       /* "powerpc",*/
+       /* "sparc",*/
+       /* "s390", */
+       /* "s390x", */
+       /* "source",*/
+        "multi-arch",
+    }
 	for _, arch := range archs {
-		hrefs := parseHrefsFromDebianPage(fetchDebianPage(arch, cd), arch, cd)
-		for _, href := range hrefs {
+		debianiso := parseISOFromDebianPage(fetchDebianPage(arch, cd), arch, cd)
+		for _, iso := range debianiso {
+            md5Gen := md5.New()
+            io.WriteString(md5Gen, iso.href)
+            hash := hex.EncodeToString(md5Gen.Sum(nil))
 			isos = append(isos, ISO{
 				distro:   "Debian",
-				url:      href,
-				filename: href,
+				url:      iso.href,
+				filename: iso.href,
+                date:     iso.date,
+                guid:     hash,
 			})
 		}
 	}
@@ -75,7 +110,7 @@ func fetchISOs() []ISO {
 
 func main() {
 	http.HandleFunc("/", handler)
-	http.ListenAndServe(":8888", nil)
+	http.ListenAndServe(":10000", nil)
 }
 
 func makeItemFromISO(iso ISO) Item {
@@ -83,9 +118,9 @@ func makeItemFromISO(iso ISO) Item {
 		Title:       iso.filename,
 		Link:        &Link{Href: iso.url},
 		Description: iso.distro,
-		Id:          "0",
-		Updated:     now,
-		Created:     now,
+		Id:          iso.guid,
+		Updated:     iso.date,
+		Created:     iso.date,
 		Author:      &Author{iso.distro, ""},
 	}
 	return item
@@ -97,9 +132,9 @@ func handler(w http.ResponseWriter, r *http.Request) {
 	for i, element := range isos {
 		items[i] = makeItemFromISO(element)
 	}
-	itemPointers := make([]*Item, len(items))
-	for i, element := range items {
-		itemPointers[i] = &element
+    itemPointers := make([]*Item, len(items))
+	for i, _ := range items {
+		itemPointers[i] = &items[i]
 	}
 	feed.Items = itemPointers
 	rss, err := feed.ToRss()
