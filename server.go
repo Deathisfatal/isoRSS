@@ -75,7 +75,7 @@ func fetchISOs() []ISO {
 
 func main() {
 	http.HandleFunc("/", handler)
-	http.ListenAndServe(":8080", nil)
+	http.ListenAndServe(":8888", nil)
 }
 
 func makeItemFromISO(iso ISO) Item {
